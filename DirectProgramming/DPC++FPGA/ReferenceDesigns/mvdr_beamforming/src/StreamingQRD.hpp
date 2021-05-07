@@ -7,27 +7,11 @@
 // utility classes
 #include "Tuple.hpp"
 #include "UnrolledLoop.hpp"
+#include "static_math.hpp"
 
 #include "mvdr_complex.hpp"
 
 using namespace sycl;
-
-// helper functions
-// computes 2^n where 'n' is a compile time constant
-template <typename T>
-static constexpr T Pow2(T n) {
-  return T(1) << n;
-}
-// base-2 logarithm
-template <typename T>
-static constexpr T Log2(T n) {
-  return ((n < 2) ? T(0) : T(1) + Log2(n / 2));
-}
-// round up Log2
-template <typename T>
-static constexpr T CeilLog2(T n) {
-  return ((n == 1) ? T(0) : Log2(n - 1) + T(1));
-}
 
 // SubmitStreamingQRDKernel
 // Accept an input matrix one column at a time from an array of pipes.  Perform

@@ -6,6 +6,7 @@
 
 #include "Tuple.hpp"
 #include "UnrolledLoop.hpp"
+#include "static_math.hpp"
 
 using namespace sycl;
 
@@ -73,12 +74,14 @@ struct Transposer {
     constexpr unsigned char kNumScratchMemCopiesBitMask = 
       kNumScratchMemCopies - 1;
     constexpr int kBankwidth = k_pipe_width * sizeof(T);
+    constexpr short kNumColsInNextPow2 = Pow2(CeilLog2(k_num_cols_in));
+
     // NO-FORMAT comments are for clang-format
     [[intel::numbanks(1)]]                   // NO-FORMAT: Attribute
     [[intel::bankwidth(kBankwidth)]]         // NO-FORMAT: Attribute
     [[intel::private_copies(1)]]             // NO-FORMAT: Attribute
     [[intel::max_replicates(k_pipe_width)]]  // NO-FORMAT: Attribute
-    T scratch[kNumScratchMemCopies][k_pipe_width][k_num_cols_in];
+    T scratch[kNumScratchMemCopies][k_pipe_width][kNumColsInNextPow2];
 
     // track the status of each of the buffers
     // NO-FORMAT comments are for clang-format
