@@ -1,42 +1,19 @@
-#define _USE_MATH_DEFINES
-#include <cmath>
-
 #include <chrono>
 #include <cstring>
 #include <iomanip>
-#include <thread>
 #include <vector>
 
 #include <CL/sycl.hpp>
 #include <CL/sycl/INTEL/fpga_extensions.hpp>
 
-#include "Tuple.hpp"
-#include "mvdr_complex.hpp"
-
-#if not defined(REAL_IO_PIPES)
 // dpc_common.hpp can be found in the dev-utilities include folder.
 // e.g., $ONEAPI_ROOT/dev-utilities/include/dpc_common.hpp
 #include "dpc_common.hpp"
-#endif
 
-#include "Constants.hpp"
+#include "packet_aligner_constants.hpp"
 #include "FakeIOPipes.hpp"
-#include "MVDR.hpp"
 
-#if defined(REAL_IO_PIPES) && defined(FPGA_EMULATOR)
-static_assert(false, "Real IO pipes cannot be emulated for this design");
-#endif
-
-#if defined(REAL_IO_PIPES) && (defined(_WIN32) || defined(_WIN64))
-static_assert(false, "Real IO pipes cannot be used in windows");
-#endif
-
-#if defined(REAL_IO_PIPES)
-#include <sys/mman.h>
-#include "UDP.hpp"
-#endif
-
-using namespace sycl;
+//using namespace sycl;
 using namespace std::chrono_literals;
 using namespace std::chrono;
 
@@ -47,111 +24,30 @@ using MyProducer = Producer<Id, T, kUseUSMHostAllocation, min_capacity>;
 template <typename Id, typename T, size_t min_capacity = 0>
 using MyConsumer = Consumer<Id, T, kUseUSMHostAllocation, min_capacity>;
 
-////////////////////////////////////////////////////////////////////////////////
-// utility functions
-std::ostream &operator<<(std::ostream &os, const ComplexType &val) {
-  os << val.real() << " + " << val.imag() << "i";
-  return os;
-}
-
-bool AlmostEqual(float x, float y, float epsilon = 0.0002f) {
-  return std::fabs(x - y) < epsilon;
-}
-
-bool AlmostEqual(ComplexType x, ComplexType y, float epsilon = 0.0002f) {
-  bool real_close = AlmostEqual(x.real(), y.real(), epsilon);
-  bool imag_close = AlmostEqual(x.imag(), y.imag(), epsilon);
-  return real_close && imag_close;
-}
-////////////////////////////////////////////////////////////////////////////////
-
 // Forward declare the kernel names to reduce name mangling
-#if not defined(REAL_IO_PIPES)
 class DataProducerID;
-class DataOutConsumerID;
-#endif
-class SinThetaProducerID;
+class DataConsumerID;
 
-// the data type that goes through the IO pipes; both fake and real
-using XrxPipeType = NTuple<ComplexType, kNumComplexPerXrxPipe>;
-
-// size of Training Data matrix, in units of XrxPipeTypes
-constexpr size_t kTrainingDataSize =
-    kNumSensorInputs * kTrainingMatrixNumRows / kNumComplexPerXrxPipe;
-
-// size of data to be processed, in units of XrxPipeTypes
-constexpr size_t kXrxDataSize =
-    kNumSensorInputs * kNumInputVectors / kNumComplexPerXrxPipe;
-
-// size of header data per set of training and processing data matrices, in
-// units of XrxPipeTypes (one header word per matrix)
-constexpr size_t kHeadersSize = 2;
-
-// total size of one 'quanta' of input data, in units of XrxPipeTypes
-constexpr size_t kInputDataSize =
-    kTrainingDataSize + kXrxDataSize + kHeadersSize;
-
-// total size of one 'quanta' of output data, in units of ComplexTypes
-constexpr size_t kDataOutSize = kNumInputVectors * kNumSteer;
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-// host producer and consumers
-#if defined(REAL_IO_PIPES)
-// REAL IO PIPES
-struct ReadIOPipeID {
-  static constexpr unsigned id = 1;
-};
-struct WriteIOPipeID {
-  static constexpr unsigned id = 0;
-};
-
-using DataInPipe =
-    INTEL::kernel_readable_io_pipe<ReadIOPipeID, XrxPipeType, 512>;
-
-using DataOutPipe =
-    INTEL::kernel_writeable_io_pipe<WriteIOPipeID, XrxPipeType, 512>;
-#else
-// FAKE IO PIPES
+// Fake IO Pipes
 using DataProducer =
-    MyProducer<DataProducerID, XrxPipeType, kInputDataSize * 2>;
+    MyProducer<DataProducerID, TODO type, TODO pipe depth>;
 using DataInPipe = DataProducer::Pipe;
 
-using DataOutConsumer =
-    MyConsumer<DataOutConsumerID, ComplexType, kDataOutSize * 2>;
-using DataOutPipe = DataOutConsumer::Pipe;
-#endif
+using DataConsumer =
+    MyConsumer<DataConsumerID, TODO type, TODO pipe depth>;
+using DataOutPipe = DataConsumer::Pipe;
 
-using SinThetaProducer = MyProducer<SinThetaProducerID, float, kNumSteer * 2>;
-using SinThetaPipe = SinThetaProducer::Pipe;
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-////////////////////////////////////////////////////////////////////////////////
 // File I/O
 bool ReadInputData(std::string in_dir, ComplexType *data_in,
                    int num_matrix_copies);
 bool WriteOutputData(std::string out_dir, ComplexType *data_out);
 bool CheckOutputData(std::string in_dir, ComplexType *data_out,
                      int num_matrix_copies, bool print_diffs);
-////////////////////////////////////////////////////////////////////////////////
 
-////////////////////////////////////////////////////////////////////////////////
-struct UDPArgs {
-  unsigned long fpga_mac_addr = 0;
-  unsigned long host_mac_addr = 0;
-  unsigned int fpga_udp_port = 0;
-  unsigned int host_udp_port = 0;
-  char *fpga_ip_addr = nullptr;
-  char *fpga_netmask = nullptr;
-  char *host_ip_addr = nullptr;
-};
-
-// arguments
+// Command Line Arguments
 bool ParseArgs(int argc, char *argv[], int &num_matrix_copies,
                std::string &in_dir, std::string &out_dir, UDPArgs *udp_args);
 void PrintUsage();
-////////////////////////////////////////////////////////////////////////////////
 
 // the main function
 int main(int argc, char *argv[]) {
