@@ -1,9 +1,9 @@
 
 {
-  "guid": "846806E2-4601-4081-87CC-93C84954A4F1",
-  "name": "MVDR Beamforming",
+  "guid": "TODO",
+  "name": "Packet Aligner",
   "categories": ["Toolkit/oneAPI Direct Programming/DPC++ FPGA/Reference Designs"],
-  "description": "A reference design demonstrating a high-performance streaming MVDR beamformer",
+  "description": "TODO",
   "toolchain": ["dpcpp"],
   "os": ["linux", "windows"],
   "builder": ["ide", "cmake"],
@@ -18,7 +18,7 @@
           "cd build",
           "cmake ..",
           "make fpga_emu",
-          "./mvdr_beamforming.fpga_emu --in=../data"
+          "./packet_aligner.fpga_emu"
         ]
       },
       {
@@ -39,7 +39,7 @@
           "cd build",
           "cmake -G \"NMake Makefiles\" ..",
           "nmake fpga_emu",
-          "mvdr_beamforming.fpga_emu.exe --in=../data"
+          "packet_aligner.fpga_emu.exe"
         ]
       },
       {
