@@ -1,7 +1,7 @@
 # To see a Makefile equivalent of this build system:
 # https://github.com/oneapi-src/oneAPI-samples/blob/master/DirectProgramming/DPC++/ProjectTemplates/makefile-fpga
 
-set(SOURCE_FILE packet_aligner.cpp)
+set(SOURCE_FILE packet_aligner_main.cpp)
 set(TARGET_NAME packet_aligner)
 set(EMULATOR_TARGET ${TARGET_NAME}.fpga_emu)
 set(SIMULATOR_TARGET ${TARGET_NAME}.fpga_sim)
