@@ -5,7 +5,8 @@
 #include <CL/sycl/INTEL/fpga_extensions.hpp>
 
 #include <array>
-#include <vector> // TODO temp
+
+#include <CL/sycl/INTEL/ac_types/ac_int.hpp>
 
 // utility classes
 //#include "UnrolledLoop.hpp"
@@ -14,8 +15,8 @@ template <unsigned min_msg_len,   // minimum message length, in bytes
           unsigned hdr_len,       // length of header, including length field
           unsigned len_start,     // lengh starts at byte len_start and goes to
                                   // the end of the header
-          const std::array<bool,hdr_len> &hdr_mask, // true = compare this byte to hdr_val
-          const std::array<char,hdr_len> &hdr_val   // expected value of header at each byte pos
+          const std::array<bool,hdr_len> &hdr_mask,   // true = compare this byte to hdr_val
+          const std::array<uint8_t,hdr_len> &hdr_val  // expected value of header at each byte pos
           >
 struct ProtocolBase {
 
@@ -23,11 +24,17 @@ struct ProtocolBase {
   constexpr static unsigned kHdrLen = hdr_len;
   constexpr static unsigned kLenStart = len_start;
   constexpr static std::array<bool,hdr_len> kHdrMask = hdr_mask;
-  constexpr static std::array<char,hdr_len> kHdrVal = hdr_val;
+  constexpr static std::array<uint8_t,hdr_len> kHdrVal = hdr_val;
 
 };  // end of struct ProtocolBase
 
+template <unsigned bus_width     // width of the data bus, in bytes
+          >
+struct PacketBusBase {
+  uint8_t data[bus_width];
+  
 
+};  // end of struct PacketBusBase
 
 
 // SubmitPacketAlignerPreprocessKernel
