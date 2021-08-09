@@ -75,11 +75,11 @@ int main(int argc, char *argv[]) {
 */
 
     constexpr static std::array<bool,4> mask = {true,true,false,false};
-    constexpr static std::array<char,4> val = {0x45,0x32,0x00,0x00};
+    constexpr static std::array<uint8_t,4> val = {0x45,0x32,0x00,0x00};
     using MyProtocol = ProtocolBase<4,4,2,mask,val>;
     MyProtocol my_protocol;
 
-    std::cout << my_protocol.kLenStart << " " << my_protocol.kHdrMask[1] << " " << (int)my_protocol.kHdrVal[0];
+    std::cout << my_protocol.kLenStart << " " << my_protocol.kHdrMask[1] << " " << (int)my_protocol.kHdrVal[0] << std::endl;
 
     auto my_event = SubmitPacketAlignerPreprocessKernel<
       class MyName,
