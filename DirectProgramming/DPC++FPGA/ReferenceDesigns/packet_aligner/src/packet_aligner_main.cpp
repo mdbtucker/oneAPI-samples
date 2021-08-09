@@ -79,11 +79,14 @@ int main(int argc, char *argv[]) {
     using MyProtocol = ProtocolBase<4,4,2,mask,val>;
     MyProtocol my_protocol;
 
+    using MyPacketBus = PacketBusBase<16,5>;
+
     std::cout << my_protocol.kLenStart << " " << my_protocol.kHdrMask[1] << " " << (int)my_protocol.kHdrVal[0] << std::endl;
+    std::cout << MyPacketBus::kBusWidth << std::endl;
 
     auto my_event = SubmitPacketAlignerPreprocessKernel<
       class MyName,
-      class MyPacketBus,
+      MyPacketBus,
       MyProtocol,
       class Pipe1,
       class Pipe2,

@@ -28,11 +28,23 @@ struct ProtocolBase {
 
 };  // end of struct ProtocolBase
 
-template <unsigned bus_width     // width of the data bus, in bytes
+template <unsigned bus_width,           // width of the data bus, in bytes
+          unsigned channel_bit_width    // width of the channel field, in bits
           >
 struct PacketBusBase {
-  uint8_t data[bus_width];
-  
+  // TODO check that bus_width < 256, so we can use uint8_t
+
+  using ChannelType = ac_int<channel_bit_width, false>;
+
+  constexpr static unsigned kBusWidth = bus_width;
+
+  bool valid;                 // indicates if contents are valid
+  uint8_t data[bus_width];    // data bytes
+  ChannelType channel;        // channel number
+  bool sop;                   // this word is the start of a TCP packet
+  bool eop;                   // this word is the end of a TCP packet
+  uint8_t num_valid_bytes;    // number of bytes (starting at 0) that are valid
+                              // only applies when eop = true
 
 };  // end of struct PacketBusBase
 
@@ -55,7 +67,7 @@ template <typename PacketAlignerPreprocessKernelName,  // Name for the Kernel
                                       // processing
           >
 sycl::event SubmitPacketAlignerPreprocessKernel(sycl::queue& q) {
-  // Template parameter checking
+  // TODO Template parameter checking
 
 
 
@@ -63,6 +75,10 @@ sycl::event SubmitPacketAlignerPreprocessKernel(sycl::queue& q) {
   auto e = q.submit([&](sycl::handler& h) {
     h.single_task<PacketAlignerPreprocessKernelName>([=] {
       while (1) {
+        
+        // TODO temp code for testing
+        if( Protocol::kMinMsgLen > 10) {break;};
+        if(PacketBus::kBusWidth < 10) {break;};
 
       }  // end of while( 1 )
     });  // end of h.single_task
