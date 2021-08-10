@@ -23,18 +23,38 @@ template <typename Id, typename T, size_t min_capacity = 0>
 using MyConsumer = Consumer<Id, T, kUseUSMHostAllocation, min_capacity>;
 
 // Forward declare the kernel names to reduce name mangling
-class DataProducerID;
-class DataConsumerID;
+class PacketProducerID;
+class PacketConsumerID;
+class PacketInfoConsumerID;
+class PacketAlignerPreprocessID;
+
+// define the protocol and packet bus interfaces
+// TODO define multiple protocols in a header file to easily select one with
+// a CMAKE define.
+constexpr unsigned kHeaderLength = 4;
+constexpr static std::array<bool, kHeaderLength> kHeaderMask = 
+  {true,true,false,false};
+constexpr static std::array<uint8_t, kHeaderLength> kHeaderVal = 
+  {0x45,0x32,0x00,0x00};
+using MyProtocol = 
+  ProtocolBase<kHeaderLength, kHeaderLength, 2, kHeaderMask, kHeaderVal>;
+// TODO allow packet bus parameters to be defined by CMAKE
+constexpr unsigned kPacketBusWidth = 16;
+constexpr unsigned kPacketChannelBitWidth = 5;
+using MyPacketBus = PacketBusBase<kPacketBusWidth, kPacketChannelBitWidth>;
+using MyPacketInfo = PacketInfoBase<kPacketBusWidth, kHeaderLength>;
 
 // Fake IO Pipes
-/*
-using DataProducer =
-    MyProducer<DataProducerID, TODO type, TODO pipe depth>;
-using DataInPipe = DataProducer::Pipe;
-using DataConsumer =
-    MyConsumer<DataConsumerID, TODO type, TODO pipe depth>;
-using DataOutPipe = DataConsumer::Pipe;
-*/
+using PacketProducer =
+  MyProducer<PacketProducerID, MyPacketBus, 512>;
+using PacketInPipe = PacketProducer::Pipe;
+using PacketConsumer =
+  MyConsumer<PacketConsumerID, MyPacketBus, 512>;
+using PacketOutPipe = PacketConsumer::Pipe;
+using PacketInfoConsumer = 
+  MyConsumer<PacketInfoConsumerID, MyPacketInfo, 512>;
+using PacketInfoPipe = PacketInfoConsumer::Pipe;
+
 // Command Line Arguments
 /*
 bool ParseArgs(int argc, char *argv[], int &num_matrix_copies,
@@ -68,30 +88,41 @@ int main(int argc, char *argv[]) {
     sycl::queue q(selector, dpc_common::exception_handler);
 
     // initialize the producers and consumers
-/*
-    DataProducer::Init(q, kInputDataSize * num_matrix_copies);
-    DataOutConsumer::Init(q, kDataOutSize * num_matrix_copies);
-    SinThetaProducer::Init(q, kNumSteer);
-*/
+    constexpr unsigned kNumPackets = 1024;  // TODO parameterize this from command line
+    PacketProducer::Init(q, kNumPackets);
+    PacketConsumer::Init(q, kNumPackets);
+    PacketInfoConsumer::Init(q, kNumPackets);
 
-    constexpr static std::array<bool,4> mask = {true,true,false,false};
-    constexpr static std::array<uint8_t,4> val = {0x45,0x32,0x00,0x00};
-    using MyProtocol = ProtocolBase<4,4,2,mask,val>;
-    MyProtocol my_protocol;
+    std::cout << "Packet Bus Width = " << kPacketBusWidth << std::endl;
+    std::cout << "Num Packets = " << kNumPackets << std::endl;
 
-    using MyPacketBus = PacketBusBase<16,5>;
-
-    std::cout << my_protocol.kLenStart << " " << my_protocol.kHdrMask[1] << " " << (int)my_protocol.kHdrVal[0] << std::endl;
-    std::cout << MyPacketBus::kBusWidth << std::endl;
-
+    // start the Packet Aligner kernels
+    // TODO put all packet aligner kernels into a single call
     auto my_event = SubmitPacketAlignerPreprocessKernel<
-      class MyName,
-      MyPacketBus,
+      PacketAlignerPreprocessID,
       MyProtocol,
-      class Pipe1,
-      class Pipe2,
-      class Pipe3
+      MyPacketBus,
+      MyPacketInfo,
+      PacketInPipe,
+      PacketOutPipe,
+      PacketInfoPipe
       >(q);
+
+    // start consumers and producers
+    sycl::event packet_producer_dma_event;
+    sycl::event packet_producer_kernel_event;
+    sycl::event packet_consumer_dma_event;
+    sycl::event packet_consumer_kernel_event;
+    sycl::event packet_info_consumer_dma_event;
+    sycl::event packet_info_consumer_kernel_event;
+    std::tie(packet_producer_dma_event, packet_producer_kernel_event) =
+        PacketProducer::Start(q, kNumPackets);
+    std::tie(packet_consumer_dma_event, packet_consumer_kernel_event) =
+        PacketConsumer::Start(q, kNumPackets);
+    std::tie(packet_info_consumer_dma_event, packet_info_consumer_kernel_event)
+      = PacketInfoConsumer::Start(q, kNumPackets);
+
+    // TODO wait on appropriate events
 
   } catch (sycl::exception const &e) {
     // Catches exceptions in the host code
