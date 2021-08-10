@@ -16,6 +16,7 @@
 // utility classes
 #include "UnrolledLoop.hpp"
 #include "Tuple.hpp"
+#include "ParallelCopyArray.hpp"
 
 template <unsigned min_msg_len,   // minimum message length, in bytes
           unsigned hdr_len,       // length of header, including length field
@@ -92,7 +93,7 @@ sycl::event SubmitPacketAlignerPreprocessKernel(sycl::queue& q) {
       // Storage for the 'tail' from the previous packet from the same channel
       // This is used for the case where a header straddles two packets
       constexpr unsigned kTailLen = Protocol::kHdrLen - 1;
-      using TailType = NTuple<uint8_t, kTailLen>;
+      using TailType = ParallelCopyArray<uint8_t, kTailLen>;
       TailType prev_word_tail[PacketBus::kNumChannels];
 
 //      [[intel::initiation_interval(1)]]  // NO-FORMAT: Attribute
@@ -117,23 +118,40 @@ sycl::event SubmitPacketAlignerPreprocessKernel(sycl::queue& q) {
 
         // retreive the 'tail' of the previous word from this channel
         TailType prev_tail = prev_word_tail[packet_in.channel];
+        #pragma unroll
+        for (int i = 0; i < kTailLen; i++) {
+          data_with_prev_tail[i] = prev_tail[i];
+        }
+/*
         UnrolledLoop<kTailLen>([&](auto i) {
-          data_with_prev_tail[i] = prev_tail.template get<i>();
+          //data_with_prev_tail[i] = prev_tail.template get<i>();
+          data_with_prev_tail[i] = prev_tail[i];
         });
+*/
 
         // combine the data from this packet with the previous word tail
+        #pragma unroll
+        for (int i = 0; i < PacketBus::kBusWidth; i++) {
+          data_with_prev_tail[i + kTailLen] = packet_in.data[i];
+        }
+/*
         UnrolledLoop<PacketBus::kBusWidth>([&](auto i) {
           data_with_prev_tail[i + kTailLen] = packet_in.data[i];
         });
-
+*/
         // store the tail from this packet
         TailType new_tail;
+        constexpr unsigned kTailStartIndex = PacketBus::kBusWidth - kTailLen;
+        #pragma unroll
+        for (int i = 0; i < kTailLen; i++) {
+          new_tail[i] = packet_in.data[i + kTailStartIndex];
+        }
+/*
         UnrolledLoop<kTailLen>([&](auto i) {
-          constexpr int kTailStartIndex = PacketBus::kBusWidth - 
-            kTailLen;
           //new_tail.template get<i>() = packet_in.data[i + kTailStartIndex];
-          new_tail.template get<i>() = 0;
+          new_tail[i] = packet_in.data[i + kTailStartIndex];
         });
+*/
         prev_word_tail[packet_in.channel] = new_tail;
 
         // check each byte position for a potentially valid header
@@ -141,7 +159,8 @@ sycl::event SubmitPacketAlignerPreprocessKernel(sycl::queue& q) {
           bool cur_pos_header_match = true;
           UnrolledLoop<Protocol::kLenStart>([&](auto j) {
             constexpr auto position = i + j;
-            if (position < kDataWithPrevTailSize && Protocol::kHdrMask[j]) {
+            if constexpr ((position < kDataWithPrevTailSize) && 
+                          Protocol::kHdrMask[j]) {
               cur_pos_header_match &= 
                 (data_with_prev_tail[position] == Protocol::kHdrVal[j]);
             }
