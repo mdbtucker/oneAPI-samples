@@ -93,7 +93,7 @@ sycl::event SubmitPacketAlignerPreprocessKernel(sycl::queue& q) {
       // This is used for the case where a header straddles two packets
       uint8_t prev_word_tail[PacketBus::kNumChannels][Protocol::kHdrLen - 1];
 
-      [[intel::initiation_interval(1)]]  // NO-FORMAT: Attribute
+//      [[intel::initiation_interval(1)]]  // NO-FORMAT: Attribute
       while (1) {
 
         [[intel::fpga_register]]  // NO-FORMAT: Attribute
