@@ -15,7 +15,6 @@
 
 // utility classes
 #include "UnrolledLoop.hpp"
-#include "Tuple.hpp"
 #include "ParallelCopyArray.hpp"
 
 template <unsigned min_msg_len,   // minimum message length, in bytes
@@ -96,7 +95,7 @@ sycl::event SubmitPacketAlignerPreprocessKernel(sycl::queue& q) {
       using TailType = ParallelCopyArray<uint8_t, kTailLen>;
       TailType prev_word_tail[PacketBus::kNumChannels];
 
-//      [[intel::initiation_interval(1)]]  // NO-FORMAT: Attribute
+      [[intel::initiation_interval(1)]]  // NO-FORMAT: Attribute
       while (1) {
 
         [[intel::fpga_register]]  // NO-FORMAT: Attribute
@@ -118,41 +117,23 @@ sycl::event SubmitPacketAlignerPreprocessKernel(sycl::queue& q) {
 
         // retreive the 'tail' of the previous word from this channel
         TailType prev_tail = prev_word_tail[packet_in.channel];
-        #pragma unroll
-        for (int i = 0; i < kTailLen; i++) {
-          data_with_prev_tail[i] = prev_tail[i];
-        }
-/*
         UnrolledLoop<kTailLen>([&](auto i) {
-          //data_with_prev_tail[i] = prev_tail.template get<i>();
           data_with_prev_tail[i] = prev_tail[i];
         });
-*/
 
         // combine the data from this packet with the previous word tail
-        #pragma unroll
-        for (int i = 0; i < PacketBus::kBusWidth; i++) {
-          data_with_prev_tail[i + kTailLen] = packet_in.data[i];
-        }
-/*
         UnrolledLoop<PacketBus::kBusWidth>([&](auto i) {
           data_with_prev_tail[i + kTailLen] = packet_in.data[i];
         });
-*/
+
         // store the tail from this packet
         TailType new_tail;
         constexpr unsigned kTailStartIndex = PacketBus::kBusWidth - kTailLen;
-        #pragma unroll
-        for (int i = 0; i < kTailLen; i++) {
-          new_tail[i] = packet_in.data[i + kTailStartIndex];
-        }
-/*
         UnrolledLoop<kTailLen>([&](auto i) {
-          //new_tail.template get<i>() = packet_in.data[i + kTailStartIndex];
-          new_tail[i] = packet_in.data[i + kTailStartIndex];
+          //new_tail[i] = packet_in.data[i + kTailStartIndex];
+          prev_word_tail[packet_in.channel][i] = 
+            packet_in.data[i + kTailStartIndex];
         });
-*/
-        prev_word_tail[packet_in.channel] = new_tail;
 
         // check each byte position for a potentially valid header
         UnrolledLoop<kDataWithPrevTailSize>([&](auto i) {
