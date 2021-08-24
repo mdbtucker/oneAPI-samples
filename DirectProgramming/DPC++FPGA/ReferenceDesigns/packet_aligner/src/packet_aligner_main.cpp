@@ -42,7 +42,7 @@ using MyProtocol =
 constexpr unsigned kPacketBusWidth = 16;
 constexpr unsigned kPacketChannelBitWidth = 5;
 using MyPacketBus = PacketBusBase<kPacketBusWidth, kPacketChannelBitWidth>;
-using MyPacketInfo = PacketInfoBase<kPacketBusWidth, kHeaderLength>;
+using MyPacketInfo = PacketInfoBase<MyProtocol, MyPacketBus>;
 
 // Fake IO Pipes
 using PacketProducer =

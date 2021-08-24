@@ -29,6 +29,7 @@ struct ProtocolBase {
   constexpr static unsigned kMinMsgLen = min_msg_len;
   constexpr static unsigned kHdrLen = hdr_len;
   constexpr static unsigned kLenStart = len_start;
+  constexpr static unsigned kLengthLen = hdr_len - len_start;
   constexpr static std::array<bool,hdr_len> kHdrMask = hdr_mask;
   constexpr static std::array<uint8_t,hdr_len> kHdrVal = hdr_val;
 
@@ -45,19 +46,19 @@ struct PacketBusBase {
   constexpr static unsigned kBusWidth = bus_width;
 
   uint8_t data[bus_width];    // data bytes
-  ChannelType channel;        // channel number
-  bool sop;                   // this word is the start of a TCP packet
-  bool eop;                   // this word is the end of a TCP packet
   uint8_t num_valid_bytes;    // number of bytes (starting at 0) that are valid
                               // only applies when eop = true
+  bool sop;                   // this word is the start of a TCP packet
+  bool eop;                   // this word is the end of a TCP packet
+  ChannelType channel;        // channel number
 
 };  // end of struct PacketBusBase
 
-template <unsigned bus_width,
-          unsigned hdr_len
+template <typename Protocol,
+          typename PacketBus
           >
 struct PacketInfoBase {
-  bool header_match[bus_width + hdr_len - 1];
+  bool header_match[PacketBus::kBusWidth + Protocol::kHdrLen - 1];
 };
 
 
@@ -147,6 +148,19 @@ sycl::event SubmitPacketAlignerPreprocessKernel(sycl::queue& q) {
             }
           });
           packet_info.header_match[i] = cur_pos_header_match;
+        });
+
+        // determine end of message position assuming each byte is the start
+        // of the length field in a new message
+        constexpr unsigned kLastLenStartPos = 
+          PacketBus::kBusWidth - Protocol::kLengthLen;
+        UnrolledLoop<Protocol::kLenStart, kLastLenStartPos>([&](auto i) {
+          unsigned length = 0;
+          UnrolledLoop<Protocol::kLengthLen>([&](auto j) {
+            // TODO support opposite endianness here?
+            constexpr unsigned shift_bits = (Protocol::kLengthLen - j - 1) * 8;
+            length |= ((unsigned)data_with_prev_tail[i+j]) << shift_bits;
+          });
         });
 
         // write the metadata and input word out for downstream processing
