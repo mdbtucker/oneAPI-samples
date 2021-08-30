@@ -16,13 +16,17 @@
 // utility classes
 #include "UnrolledLoop.hpp"
 #include "ParallelCopyArray.hpp"
+#include "mp_math.hpp"
 
 template <unsigned min_msg_len,   // minimum message length, in bytes
-          unsigned hdr_len,       // length of header, including length field
+          unsigned hdr_len,       // length of header in bytes, including length
+                                  // field
           unsigned len_start,     // lengh starts at byte len_start and goes to
                                   // the end of the header
-          const std::array<bool,hdr_len> &hdr_mask,   // true = compare this byte to hdr_val
-          const std::array<uint8_t,hdr_len> &hdr_val  // expected value of header at each byte pos
+          const std::array<bool,hdr_len> &hdr_mask,   // true = compare this 
+                                                      // byte to hdr_val
+          const std::array<uint8_t,hdr_len> &hdr_val  // expected value of 
+                                                      // header at each byte
           >
 struct ProtocolBase {
 
@@ -36,14 +40,17 @@ struct ProtocolBase {
 };  // end of struct ProtocolBase
 
 template <unsigned bus_width,           // width of the data bus, in bytes
-          unsigned channel_bit_width    // width of the channel field, in bits
+          unsigned channel_width_bits   // width of the channel field, in bits
           >
 struct PacketBusBase {
   // TODO check that bus_width < 256, so we can use uint8_t
 
-  using ChannelType = ac_int<channel_bit_width, false>;
-  constexpr static unsigned kNumChannels = 0x01 << channel_bit_width;
+  using ChannelType = ac_int<channel_width_bits, false>;
+  constexpr static unsigned kNumChannels = 0x01 << channel_width_bits;
   constexpr static unsigned kBusWidth = bus_width;
+  constexpr static unsigned kBusPosTypeWidthBits = 
+    hldutils::CeilLog2(bus_width);
+  using BusPosType = ac_int<kBusPosTypeWidthBits, false>;
 
   uint8_t data[bus_width];    // data bytes
   uint8_t num_valid_bytes;    // number of bytes (starting at 0) that are valid
@@ -152,15 +159,30 @@ sycl::event SubmitPacketAlignerPreprocessKernel(sycl::queue& q) {
 
         // determine end of message position assuming each byte is the start
         // of the length field in a new message
+
         constexpr unsigned kLastLenStartPos = 
           PacketBus::kBusWidth - Protocol::kLengthLen;
+
+        using MsgLenType = ac_int<Protocol::kLengthLen * 8, false>;
+        [[intel::fpga_register]]  // NO-FORMAT: Attribute
+        MsgLenType msg_end_word[kLastLenStartPos - Protocol::kLenStart + 1];
+        [[intel::fpga_register]]  // NO-FORMAT: Attribute
+        typename PacketBus::BusPosType msg_end_byte[kLastLenStartPos - 
+                                                    Protocol::kLenStart + 1];
+
         UnrolledLoop<Protocol::kLenStart, kLastLenStartPos>([&](auto i) {
-          unsigned length = 0;
+          MsgLenType length = 0;
           UnrolledLoop<Protocol::kLengthLen>([&](auto j) {
             // TODO support opposite endianness here?
             constexpr unsigned shift_bits = (Protocol::kLengthLen - j - 1) * 8;
-            length |= ((unsigned)data_with_prev_tail[i+j]) << shift_bits;
+            length.set_slc(
+              shift_bits, (ac_int<8,false>)data_with_prev_tail[i+j]);
+//            length |= ((MsgLenType)data_with_prev_tail[i+j]) << shift_bits;
           });
+          msg_end_word[i - Protocol::kLenStart] = length >> 
+            PacketBus::kBusPosTypeWidthBits;
+          msg_end_byte[i - Protocol::kLenStart] = 
+            length.template slc<PacketBus::kBusPosTypeWidthBits>(0);
         });
 
         // write the metadata and input word out for downstream processing
