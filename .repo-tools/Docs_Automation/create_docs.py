@@ -11,7 +11,7 @@ fileName = "sample.json"
 fCodeSamplesLists = "CODESAMPLESLIST.md"
 fChangeLogs = "CHANGELOGS.md"
 freadme = "README.md"
-fguidVer = ".repo-tools\Docs_Automation\guids.json"
+fguidVer = ".repo-tools/Docs_Automation/guids.json"
 oneAPIURL = 'https://github.com/oneapi-src/oneAPI-samples/tree/master'
 count = 0
 
@@ -30,7 +30,7 @@ def openJson(jsonFile):                 #creating a dictionary
     return data
 
 def readContent():                      #reading in strings for use in document creation
-    jsonFile = '.repo-tools\Docs_Automation\content.json'
+    jsonFile = '.repo-tools/Docs_Automation/content.json'
     dataContent = openJson(jsonFile)
     return dataContent
    
