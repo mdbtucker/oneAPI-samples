@@ -33,13 +33,25 @@ class PacketAlignerPreprocessID;
 // define the protocol and packet bus interfaces
 // TODO define multiple protocols in a header file to easily select one with
 // a CMAKE define.
+/*
 constexpr unsigned kHeaderLength = 4;
+constexpr unsigned kLenStart = kHeaderLength - 2;
 constexpr static std::array<bool, kHeaderLength> kHeaderMask = 
   {true,true,false,false};
 constexpr static std::array<uint8_t, kHeaderLength> kHeaderVal = 
   {0x45,0x32,0x00,0x00};
 using MyProtocol = 
-  ProtocolBase<kHeaderLength, kHeaderLength, 2, kHeaderMask, kHeaderVal>;
+  ProtocolBase<kHeaderLength, kHeaderLength, kLenStart, kHeaderMask, kHeaderVal>;
+*/
+constexpr unsigned kHeaderLength = 6;
+constexpr unsigned kLenStart = kHeaderLength - 3;
+constexpr static std::array<bool, kHeaderLength> kHeaderMask = 
+  {true,true,true,false,false,false};
+constexpr static std::array<uint8_t, kHeaderLength> kHeaderVal = 
+  {0x45,0x32,0x11,0xaa,0xcc,0x00};
+using MyProtocol = 
+  ProtocolBase<kHeaderLength, kHeaderLength, kLenStart, kHeaderMask, kHeaderVal>;
+
 // TODO allow packet bus parameters to be defined by CMAKE
 constexpr unsigned kPacketBusWidth = 16;
 constexpr unsigned kPacketChannelBitWidth = 5;
@@ -107,7 +119,7 @@ int main(int argc, char *argv[]) {
     std::vector<MyPacketInfo> preprocess_packet_info(num_input_packets);
 
     GenerateRandomMsgData<MyProtocol, MyPacketBus>(input_packets.data(), 
-                                                   num_input_packets, 8);
+                                                   num_input_packets, 20);
 
     std::cout << "Packet Bus Width = " << kPacketBusWidth << std::endl;
     std::cout << "Num Packets = " << num_input_packets << std::endl;
