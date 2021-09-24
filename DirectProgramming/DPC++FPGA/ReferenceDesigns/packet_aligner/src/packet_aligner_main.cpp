@@ -311,7 +311,7 @@ void PrintPacketInfo(PacketInfo *info,
   for (int packet_num = 0; packet_num < num_packets; packet_num++) {
     std::cout << std::setfill('0') << std::setw(4) << std::hex << packet_num << 
       ": ";
-    for (int i = 0; i < PacketInfo::kMsgEndSize; i++) {
+    for (int i = 0; i < PacketInfo::kNextMsgSize; i++) {
       std::cout << std::setfill('0') << std::setw(4) << std::hex 
                 << info[packet_num].next_msg_start_word[i] << " ";
     }
@@ -323,7 +323,7 @@ void PrintPacketInfo(PacketInfo *info,
   for (int packet_num = 0; packet_num < num_packets; packet_num++) {
     std::cout << std::setfill('0') << std::setw(4) << std::hex << packet_num << 
       ": ";
-    for (int i = 0; i < PacketInfo::kMsgEndSize; i++) {
+    for (int i = 0; i < PacketInfo::kNextMsgSize; i++) {
       std::cout << std::setfill('0') << std::setw(4) << std::hex 
                 << info[packet_num].next_msg_start_byte[i] << " ";
     }

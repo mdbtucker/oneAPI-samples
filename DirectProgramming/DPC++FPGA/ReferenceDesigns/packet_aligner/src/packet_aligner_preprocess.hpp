@@ -71,9 +71,11 @@ struct PacketInfoBase {
   constexpr static unsigned kDataWithPrevTailSize = PacketBus::kBusWidth + 
                                                     kTailLen;
   constexpr static unsigned kHeaderMatchLen = kDataWithPrevTailSize - kTailLen;
-  constexpr static unsigned kMsgEndSize = kDataWithPrevTailSize - 
-                                          Protocol::kLenStart - 
-                                          Protocol::kLengthLen + 1;
+  constexpr static unsigned kNextMsgSize = kDataWithPrevTailSize - 
+                                           Protocol::kLenStart - 
+                                           Protocol::kLengthLen + 1;
+//  constexpr static unsigned kMaxMsgsPerWord =
+//    kDataWithPrevTailSize / Protocol::kMinMsgLen;
 
   // TODO much of this is temporary to allow viewing of intermediate results
   
@@ -84,8 +86,9 @@ struct PacketInfoBase {
   bool header_match[kHeaderMatchLen];
   
   // next_msg_start_<word|byte>[0] is . . . how to explain this?
-  unsigned next_msg_start_word[kMsgEndSize] ;
-  unsigned next_msg_start_byte[kMsgEndSize];
+  unsigned next_msg_start_word[kNextMsgSize] ;
+  unsigned next_msg_start_byte[kNextMsgSize];
+  bool next_msg_start_same_word[kNextMsgSize];
 };
 
 
@@ -179,12 +182,13 @@ sycl::event SubmitPacketAlignerPreprocessKernel(sycl::queue& q) {
 
         using MsgLenType = ac_int<Protocol::kLengthLen * 8, false>;
         [[intel::fpga_register]]  // NO-FORMAT: Attribute
-        MsgLenType next_msg_start_word[PacketInfo::kMsgEndSize];
+        MsgLenType next_msg_start_word[PacketInfo::kNextMsgSize];
         [[intel::fpga_register]]  // NO-FORMAT: Attribute
         typename PacketBus::BusPosType 
-          next_msg_start_byte[PacketInfo::kMsgEndSize];
+          next_msg_start_byte[PacketInfo::kNextMsgSize];
+        bool next_msg_start_same_word[PacketInfo::kNextMsgSize];
 
-        UnrolledLoop<PacketInfo::kMsgEndSize>([&](auto i) {
+        UnrolledLoop<PacketInfo::kNextMsgSize>([&](auto i) {
           MsgLenType length = 0;
           UnrolledLoop<Protocol::kLengthLen>([&](auto j) {
             // TODO support opposite endianness here?
@@ -198,12 +202,16 @@ sycl::event SubmitPacketAlignerPreprocessKernel(sycl::queue& q) {
           next_start_pos = length + i - PacketInfo::kTailLen;
           next_msg_start_word[i] = next_start_pos >> 
                                    PacketBus::kBusPosTypeWidthBits;
+          next_msg_start_same_word[i] = next_msg_start_word[i] > 0;
           next_msg_start_byte[i] = 
             next_start_pos.template slc<PacketBus::kBusPosTypeWidthBits>(0);
 
           packet_info.next_msg_start_word[i] = next_msg_start_word[i];
           packet_info.next_msg_start_byte[i] = next_msg_start_byte[i];
+          packet_info.next_msg_start_same_word[i] = next_msg_start_same_word[i];
         });
+
+        // determine 
 
         // write the metadata and input word out for downstream processing
         if (packet_in_valid) {
