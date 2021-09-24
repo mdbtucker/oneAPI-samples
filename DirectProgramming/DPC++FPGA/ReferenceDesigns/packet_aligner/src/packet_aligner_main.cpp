@@ -57,13 +57,14 @@ constexpr unsigned kPacketBusWidth = 16;
 constexpr unsigned kPacketChannelBitWidth = 5;
 using MyPacketBus = PacketBusBase<kPacketBusWidth, kPacketChannelBitWidth>;
 using MyPacketInfo = PacketInfoBase<MyProtocol, MyPacketBus>;
+using MyPacketWithPrevTail = PacketWithPrevTailBase<MyPacketInfo>;
 
 // Fake IO Pipes
 using PacketProducer =
   MyProducer<PacketProducerID, MyPacketBus, 512>;
 using PacketInPipe = PacketProducer::Pipe;
 using PacketConsumer =
-  MyConsumer<PacketConsumerID, MyPacketBus, 512>;
+  MyConsumer<PacketConsumerID, MyPacketWithPrevTail, 512>;
 using PacketOutPipe = PacketConsumer::Pipe;
 using PacketInfoConsumer = 
   MyConsumer<PacketInfoConsumerID, MyPacketInfo, 512>;
@@ -85,8 +86,12 @@ template<typename Protocol, typename PacketBus>
 void PrintMsgData(PacketBus *packets,
                   unsigned num_packets);
 
-template<typename Protocol, typename PacketBus, typename PacketInfo>
+template<typename Protocol,
+         typename PacketBus,
+         typename PacketInfo,
+         typename PacketWithPrevTail>
 void PrintPacketInfo(PacketInfo *info,
+                     PacketWithPrevTail *packet_with_tail,
                      unsigned num_packets);
 
 
@@ -115,7 +120,8 @@ int main(int argc, char *argv[]) {
     // input and output data
     unsigned num_input_packets = 4;  // TODO parameterize this from command line
     std::vector<MyPacketBus> input_packets(num_input_packets);
-    std::vector<MyPacketBus> preprocess_output_packets(num_input_packets);
+    std::vector<MyPacketWithPrevTail> 
+      preprocess_output_packets(num_input_packets);
     std::vector<MyPacketInfo> preprocess_packet_info(num_input_packets);
 
     GenerateRandomMsgData<MyProtocol, MyPacketBus>(input_packets.data(), 
@@ -136,7 +142,8 @@ int main(int argc, char *argv[]) {
     PacketInfoConsumer::Init(q, num_input_packets);
 
     // copy the input data to the producer fake IO pipe buffer
-    std::copy_n(input_packets.data(), num_input_packets, PacketProducer::Data());
+    std::copy_n(input_packets.data(), num_input_packets, 
+                PacketProducer::Data());
 
     // start the Packet Aligner kernels
     // TODO put all packet aligner kernels into a single call
@@ -145,6 +152,7 @@ int main(int argc, char *argv[]) {
       MyProtocol,
       MyPacketBus,
       MyPacketInfo,
+      MyPacketWithPrevTail,
       PacketInPipe,
       PacketOutPipe,
       PacketInfoPipe
@@ -176,11 +184,18 @@ int main(int argc, char *argv[]) {
     // copy the output back from the consumer
     std::copy_n(PacketInfoConsumer::Data(), num_input_packets,
                 preprocess_packet_info.data());
+    std::copy_n(PacketConsumer::Data(), num_input_packets,
+                preprocess_output_packets.data());
 
 
     std::cout << "Preprocess packet_info:" << std::endl;
-    PrintPacketInfo<MyProtocol, MyPacketBus, MyPacketInfo>(
-      preprocess_packet_info.data(), num_input_packets);
+    PrintPacketInfo<MyProtocol, 
+                    MyPacketBus, 
+                    MyPacketInfo, 
+                    MyPacketWithPrevTail
+                    >(preprocess_packet_info.data(), 
+                      preprocess_output_packets.data(),
+                      num_input_packets);
 
   } catch (sycl::exception const &e) {
     // Catches exceptions in the host code
@@ -276,7 +291,7 @@ void PrintMsgData(PacketBus *packets,
                   unsigned num_packets) {
 
   for (int packet_num = 0; packet_num < num_packets; packet_num++) {
-    std::cout << std::setfill('0') << std::setw(4) << std::hex << packet_num << 
+    std::cout << std::setfill('0') << std::setw(6) << std::hex << packet_num << 
       ": ";
     for (int byte_pos = 0; byte_pos < PacketBus::kBusWidth; byte_pos++) {
       std::cout << std::setfill('0') << std::setw(2)  << 
@@ -288,19 +303,35 @@ void PrintMsgData(PacketBus *packets,
 }
 
 
-template<typename Protocol, typename PacketBus, typename PacketInfo>
+template<typename Protocol,
+         typename PacketBus,
+         typename PacketInfo,
+         typename PacketWithPrevTail>
 void PrintPacketInfo(PacketInfo *info,
+                     PacketWithPrevTail *packet_with_tail,
                      unsigned num_packets) {
+
+  std::cout << "packet_with_prev_tail:" << std::endl;
+  for (int packet_num = 0; packet_num < num_packets; packet_num++) {
+    std::cout << std::setfill('0') << std::setw(6) << std::hex << packet_num << 
+      ": ";
+    for (int byte_pos = 0; byte_pos < PacketInfo::kDataWithPrevTailSize; 
+         byte_pos++) {
+      std::cout << std::setfill('0') << std::setw(6)  << 
+        (unsigned)packet_with_tail[packet_num].data[byte_pos] << " ";
+    }
+    std::cout << std::endl;
+  }
 
   std::cout << "header_match:" << std::endl;
   for (int packet_num = 0; packet_num < num_packets; packet_num++) {
-    std::cout << std::setfill('0') << std::setw(4) << std::hex << packet_num << 
+    std::cout << std::setfill('0') << std::setw(6) << std::hex << packet_num << 
       ": ";
     for (int i = 0; i < PacketInfo::kHeaderMatchLen; i++) {
       if (info[packet_num].header_match[i]) {
-        std::cout << " T ";
+        std::cout << "     T ";
       } else {
-        std::cout << " F ";
+        std::cout << "     F ";
       }
     }
     std::cout << std::endl;
@@ -309,10 +340,10 @@ void PrintPacketInfo(PacketInfo *info,
 
   std::cout << "next_msg_start_word:" << std::endl;
   for (int packet_num = 0; packet_num < num_packets; packet_num++) {
-    std::cout << std::setfill('0') << std::setw(4) << std::hex << packet_num << 
+    std::cout << std::setfill('0') << std::setw(6) << std::hex << packet_num << 
       ": ";
     for (int i = 0; i < PacketInfo::kNextMsgSize; i++) {
-      std::cout << std::setfill('0') << std::setw(4) << std::hex 
+      std::cout << std::setfill('0') << std::setw(6) << std::hex 
                 << info[packet_num].next_msg_start_word[i] << " ";
     }
     std::cout << std::endl;
@@ -321,14 +352,30 @@ void PrintPacketInfo(PacketInfo *info,
 
   std::cout << "next_msg_start_byte:" << std::endl;
   for (int packet_num = 0; packet_num < num_packets; packet_num++) {
-    std::cout << std::setfill('0') << std::setw(4) << std::hex << packet_num << 
+    std::cout << std::setfill('0') << std::setw(6) << std::hex << packet_num << 
       ": ";
     for (int i = 0; i < PacketInfo::kNextMsgSize; i++) {
-      std::cout << std::setfill('0') << std::setw(4) << std::hex 
+      std::cout << std::setfill('0') << std::setw(6) << std::hex 
                 << info[packet_num].next_msg_start_byte[i] << " ";
     }
     std::cout << std::endl;
   }
   std::cout << std::endl;
+
+  std::cout << "next_msg_start_same_word:" << std::endl;
+  for (int packet_num = 0; packet_num < num_packets; packet_num++) {
+    std::cout << std::setfill('0') << std::setw(6) << std::hex << packet_num << 
+      ": ";
+    for (int i = 0; i < PacketInfo::kNextMsgSize; i++) {
+      if (info[packet_num].next_msg_start_same_word[i]) {
+        std::cout << "     T ";
+      } else {
+        std::cout << "     F ";
+      }
+    }
+    std::cout << std::endl;
+  }
+  std::cout << std::endl;
+
 
 }

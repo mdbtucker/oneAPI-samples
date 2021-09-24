@@ -67,15 +67,25 @@ template <typename Protocol,
           typename PacketBus
           >
 struct PacketInfoBase {
+  // Tail is 1 byte shorter than a full header, long enough to store any
+  // partial header but not a full header
   constexpr static unsigned kTailLen = Protocol::kHdrLen - 1;
   constexpr static unsigned kDataWithPrevTailSize = PacketBus::kBusWidth + 
                                                     kTailLen;
+  
+  // No need to check for header matches for the final kTailLen bytes of a
+  // packet word, as there are not enough bytes for a full header so we can
+  // never have a match.
   constexpr static unsigned kHeaderMatchLen = kDataWithPrevTailSize - kTailLen;
+  
+  // Only need to calculate next_msg values for bytes that could be the start
+  // of a new Length field, therefore can 'truncate' the last few bytes
   constexpr static unsigned kNextMsgSize = kDataWithPrevTailSize - 
-                                           Protocol::kLenStart - 
                                            Protocol::kLengthLen + 1;
-//  constexpr static unsigned kMaxMsgsPerWord =
-//    kDataWithPrevTailSize / Protocol::kMinMsgLen;
+  
+  // maximum number of messages that can fit in a word (including the tail)
+  constexpr static unsigned kMaxMsgsPerWord = kDataWithPrevTailSize / 
+                                              Protocol::kMinMsgLen;
 
   // TODO much of this is temporary to allow viewing of intermediate results
   
@@ -85,11 +95,17 @@ struct PacketInfoBase {
   // header_match is calculated for them.
   bool header_match[kHeaderMatchLen];
   
-  // next_msg_start_<word|byte>[0] is . . . how to explain this?
   unsigned next_msg_start_word[kNextMsgSize] ;
   unsigned next_msg_start_byte[kNextMsgSize];
   bool next_msg_start_same_word[kNextMsgSize];
-};
+};  // end of struct PacketInfoBase
+
+// structure to store a word of packet data combined with the 'tail' from the
+// previous word
+template <typename PacketInfo>
+struct PacketWithPrevTailBase {
+  uint8_t data[PacketInfo::kDataWithPrevTailSize];
+};  // end of struct PacketWithPrevTailBase
 
 
 // SubmitPacketAlignerPreprocessKernel
@@ -102,11 +118,15 @@ template <typename PacketAlignerPreprocessKernelName,  // Name for the Kernel
                                   // used as input/output for this kernel.
           typename PacketInfo,    // Struct containing metadata calculated for
                                   // each packet word received
+          typename PacketWithPrevTail,  // Struct containing a full packet word
+                                        // plus the 'tail' from the previous
+                                        // packet word
           typename PacketInPipe,  // Receive data words bundled in a PacketBus
                                   // struct.
-          typename PacketOutPipe, // Send data words bundled in a PacketBus
-                                  // struct.  Feed through copy of data read
-                                  // from PacketInPipe.
+          typename PacketOutPipe, // Send data words bundled in a 
+                                  // PacketWithPrevTail struct.  Combines data
+                                  // from PacketInPipe with end of the previous
+                                  // word from the same channel
           typename PacketInfoOutPipe  // Send metadata about each data word 
                                       // bundled in a PacketInfo struct, used to
                                       // ease downstream processing
@@ -138,7 +158,7 @@ sycl::event SubmitPacketAlignerPreprocessKernel(sycl::queue& q) {
 
         // combine current data with tail from previous word from same channel
         [[intel::fpga_register]]  // NO-FORMAT: Attribute
-        uint8_t data_with_prev_tail[PacketInfo::kDataWithPrevTailSize];
+        PacketWithPrevTail packet_with_prev_tail;
 
         // read a word from the PacketInPipe, if available
         packet_in = PacketInPipe::read(packet_in_valid);
@@ -146,12 +166,13 @@ sycl::event SubmitPacketAlignerPreprocessKernel(sycl::queue& q) {
         // retreive the 'tail' of the previous word from this channel
         TailType prev_tail = prev_word_tail[packet_in.channel];
         UnrolledLoop<PacketInfo::kTailLen>([&](auto i) {
-          data_with_prev_tail[i] = prev_tail[i];
+          packet_with_prev_tail.data[i] = prev_tail[i];
         });
 
         // combine the data from this packet with the previous word tail
         UnrolledLoop<PacketBus::kBusWidth>([&](auto i) {
-          data_with_prev_tail[i + PacketInfo::kTailLen] = packet_in.data[i];
+          packet_with_prev_tail.data[i + PacketInfo::kTailLen] = 
+            packet_in.data[i];
         });
 
         // store the tail from this packet
@@ -171,14 +192,14 @@ sycl::event SubmitPacketAlignerPreprocessKernel(sycl::queue& q) {
             constexpr auto position = i + j;
             if constexpr (Protocol::kHdrMask[j]) {
               cur_pos_header_match &= 
-                (data_with_prev_tail[position] == Protocol::kHdrVal[j]);
+                (packet_with_prev_tail.data[position] == Protocol::kHdrVal[j]);
             }
           });
           packet_info.header_match[i] = cur_pos_header_match;
         });
 
-        // determine end of message position assuming each byte is the start
-        // of the length field in a new message
+        // determine position of start of next message IF each byte were the 
+        // start of the length field in a new message 
 
         using MsgLenType = ac_int<Protocol::kLengthLen * 8, false>;
         [[intel::fpga_register]]  // NO-FORMAT: Attribute
@@ -193,16 +214,21 @@ sycl::event SubmitPacketAlignerPreprocessKernel(sycl::queue& q) {
           UnrolledLoop<Protocol::kLengthLen>([&](auto j) {
             // TODO support opposite endianness here?
             constexpr unsigned shift_bits = (Protocol::kLengthLen - j - 1) * 8;
-            constexpr auto position = i + j + Protocol::kLenStart;
+            constexpr auto position = i + j;
             length.set_slc(
-              shift_bits, (ac_int<8,false>)data_with_prev_tail[position]);
-//            length |= ((MsgLenType)data_with_prev_tail[i+j]) << shift_bits;
+              shift_bits, 
+              (ac_int<8,false>)packet_with_prev_tail.data[position]);
           });
           ac_int<(Protocol::kLengthLen * 8) + 1, false> next_start_pos;
-          next_start_pos = length + i - PacketInfo::kTailLen;
+          
+          // Calculate the position within the data_with_tail array where the
+          // next message would start.
+          // Remember we are assuming the current byte is the start of the
+          // length field, so we need to subtract off the rest of the header
+          next_start_pos = length + i - Protocol::kLenStart;
           next_msg_start_word[i] = next_start_pos >> 
                                    PacketBus::kBusPosTypeWidthBits;
-          next_msg_start_same_word[i] = next_msg_start_word[i] > 0;
+          next_msg_start_same_word[i] = next_msg_start_word[i] == 0;
           next_msg_start_byte[i] = 
             next_start_pos.template slc<PacketBus::kBusPosTypeWidthBits>(0);
 
@@ -211,12 +237,10 @@ sycl::event SubmitPacketAlignerPreprocessKernel(sycl::queue& q) {
           packet_info.next_msg_start_same_word[i] = next_msg_start_same_word[i];
         });
 
-        // determine 
-
         // write the metadata and input word out for downstream processing
         if (packet_in_valid) {
           PacketInfoOutPipe::write(packet_info);
-          PacketOutPipe::write(packet_in);
+          PacketOutPipe::write(packet_with_prev_tail);
         }
 
 
