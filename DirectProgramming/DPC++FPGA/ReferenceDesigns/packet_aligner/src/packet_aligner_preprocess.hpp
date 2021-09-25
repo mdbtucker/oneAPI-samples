@@ -79,9 +79,9 @@ struct PacketInfoBase {
   constexpr static unsigned kHeaderMatchLen = kDataWithPrevTailSize - kTailLen;
   
   // Only need to calculate next_msg values for bytes that could be the start
-  // of a new Length field, therefore can 'truncate' the last few bytes
-  constexpr static unsigned kNextMsgSize = kDataWithPrevTailSize - 
-                                           Protocol::kLengthLen + 1;
+  // of a new full header field that fits entirely in the current word,
+  // therefore we truncate the last few bytes
+  constexpr static unsigned kNextMsgSize = kDataWithPrevTailSize - kTailLen;
   
   // maximum number of messages that can fit in a word (including the tail)
   constexpr static unsigned kMaxMsgsPerWord = kDataWithPrevTailSize / 
@@ -199,7 +199,7 @@ sycl::event SubmitPacketAlignerPreprocessKernel(sycl::queue& q) {
         });
 
         // determine position of start of next message IF each byte were the 
-        // start of the length field in a new message 
+        // start of the header field in a new message 
 
         using MsgLenType = ac_int<Protocol::kLengthLen * 8, false>;
         [[intel::fpga_register]]  // NO-FORMAT: Attribute
@@ -214,7 +214,7 @@ sycl::event SubmitPacketAlignerPreprocessKernel(sycl::queue& q) {
           UnrolledLoop<Protocol::kLengthLen>([&](auto j) {
             // TODO support opposite endianness here?
             constexpr unsigned shift_bits = (Protocol::kLengthLen - j - 1) * 8;
-            constexpr auto position = i + j;
+            constexpr auto position = i + j + Protocol::kLenStart;
             length.set_slc(
               shift_bits, 
               (ac_int<8,false>)packet_with_prev_tail.data[position]);
@@ -225,7 +225,7 @@ sycl::event SubmitPacketAlignerPreprocessKernel(sycl::queue& q) {
           // next message would start.
           // Remember we are assuming the current byte is the start of the
           // length field, so we need to subtract off the rest of the header
-          next_start_pos = length + i - Protocol::kLenStart;
+          next_start_pos = length + i;
           next_msg_start_word[i] = next_start_pos >> 
                                    PacketBus::kBusPosTypeWidthBits;
           next_msg_start_same_word[i] = next_msg_start_word[i] == 0;
