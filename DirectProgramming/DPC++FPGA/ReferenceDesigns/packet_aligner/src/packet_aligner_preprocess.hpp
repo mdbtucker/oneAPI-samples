@@ -202,14 +202,32 @@ sycl::event SubmitPacketAlignerPreprocessKernel(sycl::queue& q) {
         // start of the header field in a new message 
 
         using MsgLenType = ac_int<Protocol::kLengthLen * 8, false>;
+        
+        // Which word (relative to the current word being 0) would the next
+        // message start in, if the given byte were the start of a message
         [[intel::fpga_register]]  // NO-FORMAT: Attribute
         MsgLenType next_msg_start_word[PacketInfo::kNextMsgSize];
+        
+        // Which byte within the data_with_tail array would the next message
+        // start on, if the given byte were the start of a message
         [[intel::fpga_register]]  // NO-FORMAT: Attribute
         typename PacketBus::BusPosType 
           next_msg_start_byte[PacketInfo::kNextMsgSize];
+        
+        // pre-calculate if the next message would start in the same word,
+        // equivalent to next_msg_start_word == 0
         bool next_msg_start_same_word[PacketInfo::kNextMsgSize];
 
+        [[intel::fpga_register]]  // NO-FORMAT: Attribute
+        typename PacketBus::BusPosType 
+          next_word_pos_chain[PacketInfo::kNextMsgSize]
+                             [PacketInfo::kMaxMsgsPerWord];
+
+
         UnrolledLoop<PacketInfo::kNextMsgSize>([&](auto i) {
+          
+          // determine the message lengh, if the current byte were the start
+          // of a header
           MsgLenType length = 0;
           UnrolledLoop<Protocol::kLengthLen>([&](auto j) {
             // TODO support opposite endianness here?
@@ -222,9 +240,8 @@ sycl::event SubmitPacketAlignerPreprocessKernel(sycl::queue& q) {
           ac_int<(Protocol::kLengthLen * 8) + 1, false> next_start_pos;
           
           // Calculate the position within the data_with_tail array where the
-          // next message would start.
-          // Remember we are assuming the current byte is the start of the
-          // length field, so we need to subtract off the rest of the header
+          // next message would start, if the current byte were the start of
+          // a message.
           next_start_pos = length + i;
           next_msg_start_word[i] = next_start_pos >> 
                                    PacketBus::kBusPosTypeWidthBits;
@@ -232,6 +249,9 @@ sycl::event SubmitPacketAlignerPreprocessKernel(sycl::queue& q) {
           next_msg_start_byte[i] = 
             next_start_pos.template slc<PacketBus::kBusPosTypeWidthBits>(0);
 
+
+
+          // TODO: Temporary, store all intermediate values in packet_info, for validation
           packet_info.next_msg_start_word[i] = next_msg_start_word[i];
           packet_info.next_msg_start_byte[i] = next_msg_start_byte[i];
           packet_info.next_msg_start_same_word[i] = next_msg_start_same_word[i];
