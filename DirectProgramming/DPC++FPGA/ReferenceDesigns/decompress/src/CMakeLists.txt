@@ -36,9 +36,8 @@ endif()
 # These are Windows-specific flags:
 # 1. /EHsc This is a Windows-specific flag that enables exception handling in host code
 # 2. /Qactypes Include ac_types headers and link against ac_types emulation libraries
-# 3. /std:c++17 instructs msvc to use C++17 when compiling
 if(WIN32)
-    set(WIN_FLAG "/EHsc /std:c++17")
+    set(WIN_FLAG "/EHsc")
     set(AC_TYPES_FLAG "/Qactypes")
 else()
     set(AC_TYPES_FLAG "-qactypes")

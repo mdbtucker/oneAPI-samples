@@ -4,6 +4,7 @@
 #include <fstream>
 #include <limits>
 #include <numeric>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <sycl/ext/intel/fpga_extensions.hpp>
