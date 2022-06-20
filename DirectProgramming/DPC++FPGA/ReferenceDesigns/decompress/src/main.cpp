@@ -138,11 +138,9 @@ int main(int argc, char* argv[]) {
 #endif
 
   // create the device queue
-  std::cout << "Creating the device queue" << std::endl;
   queue q(selector, dpc_common::exception_handler);
 
   // create the decompressor based on which decompression version we are using
-  std::cout << "Creating the decompressor" << std::endl;
 #if defined(GZIP)
   GzipDecompressorT decompressor;
 #else
@@ -153,15 +151,12 @@ int main(int argc, char* argv[]) {
   bool passed;
   if (default_test_mode) {
 #if defined(GZIP)
-    std::cout << "Running default Gzip test" << std::endl;
     passed = RunGzipTest(q, decompressor, test_dir);
 #else
-    std::cout << "Running default Snappy test" << std::endl;
     passed = RunSnappyTest(q, decompressor, test_dir);
 #endif
   } else {
     // decompress a specific file specified at the command line
-    std::cout << "Decompressing " << in_filename << " to file " << out_filename << std::endl;
     passed = decompressor.DecompressFile(q, in_filename, out_filename, runs,
                                          true, true);
   }
